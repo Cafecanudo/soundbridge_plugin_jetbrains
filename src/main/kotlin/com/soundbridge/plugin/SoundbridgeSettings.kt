@@ -1,0 +1,35 @@
+package com.soundbridge.plugin
+
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.service
+
+@Service(Service.Level.APP)
+@State(name = "SoundbridgeSettings", storages = [Storage("soundbridge.xml")])
+class SoundbridgeSettings : PersistentStateComponent<SoundbridgeSettings.State> {
+
+    data class State(
+        var commandBase: String = "soundbridge-tx",
+        var bandHigh: Int = 22000,
+        var stereo: Boolean = true,
+        var resync: String = "10",
+        var parity: String = "16",
+        var peak: String = "",
+        var guard: String = "",
+        var lastDeviceIndex: Int = -1,
+    )
+
+    private var state = State()
+
+    override fun getState(): State = state
+
+    override fun loadState(state: State) {
+        this.state = state
+    }
+
+    companion object {
+        fun getInstance(): SoundbridgeSettings = service()
+    }
+}

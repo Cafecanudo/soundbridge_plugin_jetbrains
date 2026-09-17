@@ -10,6 +10,14 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                parentId="tools"
+                instance="com.soundbridge.plugin.SettingsConfigurable"
+                id="com.soundbridge.plugin.settings"
+                displayName="SoundBridge"/>
+    </extensions>
+
     <actions>
         <action id="com.soundbridge.plugin.SendByAudioAction"
                 class="com.soundbridge.plugin.SendByAudioAction"
