@@ -4,7 +4,6 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.ui.Messages
 
 class SendByAudioAction : AnAction() {
 
@@ -17,10 +16,7 @@ class SendByAudioAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        Messages.showInfoMessage(
-            e.project,
-            "Esqueleto OK.\nArquivo selecionado:\n${file.path}",
-            "SoundBridge — Enviar por Áudio"
-        )
+        if (file.isDirectory) return
+        SendDialog(e.project, file).show()
     }
 }
