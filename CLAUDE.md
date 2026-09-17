@@ -21,8 +21,13 @@ Competição acadêmica (prazo jan/2027); o plugin vale como **"implementação 
 (publicado no PyPI) via **subprocess** (Opção A). O plugin orquestra: monta o comando, executa,
 captura a saída e mostra o progresso/log.
 
-- **Requisito do usuário:** Python + `soundbridge-tx[live]` instalados. O plugin deve **detectar**
-  isso e orientar a instalação (`pip install soundbridge-tx[live]`) se faltar.
+- **Integração contra a CLI 1.0.0 publicada (Opção B — DECIDIDO).** O plugin **NÃO usa flags JSON**
+  (`--list-devices-json`/`--progress-json` não existem no pacote). Ele parseia a **saída de texto**
+  da CLI 1.0.0. Sem dependência de republicar o pacote.
+- **Requisito do usuário:** Python ≥3.10 + `soundbridge-tx[live]` instalados. O plugin deve
+  **detectar** isso e orientar a instalação (`pip install soundbridge-tx[live]`) se faltar.
+- **Comando default dos Settings:** `soundbridge-tx` (entry-point; resolve no PATH). No Windows,
+  tratar a resolução do `.exe`/`cmd` no runner.
 - Evolução futura (opcional, não agora): portar o core para Kotlin nativo.
 
 ## Regra de ouro do projeto
@@ -48,16 +53,17 @@ captura a saída e mostra o progresso/log.
 | `plugin.xml` | registra a Action (menu de contexto) e o Settings; compatibilidade com IDEs JetBrains |
 | `SendByAudioAction` | a ação "Enviar por Áudio" no menu de contexto de um arquivo |
 | `SendDialog` | a janela de envio: config selecionável + barra de progresso + log + botão retentar |
-| `SoundbridgeRunner` | executa o `soundbridge-tx` (subprocess), lê o stdout (JSON) linha a linha |
+| `SoundbridgeRunner` | executa o `soundbridge-tx` (subprocess), lê o stdout (texto) linha a linha |
 | `SoundbridgeSettings` | as configurações fixas (persistidas via `PersistentStateComponent`) |
 | `SettingsConfigurable` | a tela de Settings da IDE (Preferences → Tools → SoundBridge) |
 
 ### Fluxo
 1. Botão direito num arquivo no Project View → **"Enviar por Áudio"**.
 2. Abre o `SendDialog` (parâmetros selecionáveis).
-3. Ao **Enviar**: o `SoundbridgeRunner` roda `soundbridge-tx --in <arquivo> --progress-json ...`,
-   lê o stdout JSON, atualiza a barra e o log ao vivo.
-4. Se `error`: mostra **Retentar** (reexecuta com os mesmos parâmetros).
+3. Ao **Enviar**: o `SoundbridgeRunner` roda `soundbridge-tx --in <arquivo> --play --device N ...`,
+   lê o stdout de texto linha a linha, alimenta o log ao vivo e a barra (indeterminada).
+4. Sucesso = `exitCode 0` + linha `crc32=...` vista. Falha (exit≠0 / traceback) → mostra
+   **Retentar** (reexecuta com os mesmos parâmetros).
 
 ## Divisão dos parâmetros (DECISÃO TOMADA)
 
@@ -65,54 +71,79 @@ captura a saída e mostra o progresso/log.
 `band-high` (22000), `stereo` (sim), `resync`, `parity`, `peak`, `guard` (avançados, com defaults).
 
 **Selecionáveis — na Janela de Envio (a cada envio):**
-- **Device** de saída (dropdown, via `--list-devices-json`)
+- **Device** de saída (dropdown, via `--list-devices` parseado)
 - **Modo:** AUTO (recomendado) ou manual → se manual: **modulação** + **FEC**
 - **zip** (checkbox), **name** (default = nome do arquivo), **profile** (opcional),
   **copymemory** (checkbox)
 
-## Como o plugin consome o pacote (contrato)
+## Como o plugin consome o pacote (contrato de parse — CLI 1.0.0, Opção B)
 
-O plugin depende de duas saídas estruturadas do `soundbridge-tx` (a serem adicionadas na versão
-0.2.0 do pacote, no repo `soundbridge_tx`):
+O plugin parseia a **saída de texto** do `soundbridge-tx 1.0.0` publicado. Contratos travados a
+partir da saída real na máquina do usuário (Windows).
 
-### `--list-devices-json`
-Retorna os devices em JSON (para popular o dropdown):
-```json
-[{"index": 12, "name": "...", "channels": 2, "sample_rate": 48000, "api": "Windows WASAPI", "default": false}, ...]
+### `--list-devices` → dropdown de devices
+Saída real (ignorar a linha de cabeçalho `Dispositivos de saida disponiveis:`):
 ```
-
-### `--progress-json`
-Emite eventos como **linhas JSON** no stdout (uma por linha; desliga a barra ANSI):
-```json
-{"event": "start", "file": "arquivo.zip", "bytes": 9029}
-{"event": "auto", "modulation": "1024-QAM", "fec": "r12"}
-{"event": "modulating", "modulation": "1024-QAM"}
-{"event": "progress", "percent": 45.2, "elapsed": 1.1, "total": 2.4}
-{"event": "done", "crc32": "0xC57F5DA1", "bytes": 9029}
-{"event": "error", "message": "..."}
+  [12] Alto-falantes (G733 Gaming Headset)  2ch  48000Hz  [Windows WASAPI]
+  [4] Alto-falantes (G733 Gaming Head  2ch  44100Hz  [MME] (default)
 ```
-O `SoundbridgeRunner` lê linha a linha, faz parse do JSON e mapeia:
-`progress.percent` → barra; `start`/`auto`/`modulating` → log; `done` → sucesso; `error` → falha.
+Regex por linha:
+```
+^\s*\[(\d+)\]\s+(.*?)\s{2,}(\d+)ch\s{2,}(\d+)Hz\s{2,}\[([^\]]+)\](\s+\(default\))?\s*$
+```
+→ `index`, `name` (pode vir **truncado** pela CLI), `channels`, `sampleRate`, `api`, `isDefault`.
+Separador entre campos é **2+ espaços**; o nome usa espaço simples (o `.*?` não-guloso corta certo).
+
+### Progresso / sucesso (`--play`, mesmo formato do `--out`)
+Saída real:
+```
+auto: payload 4 bytes -> 1024-QAM + r12
+[###################################] Escrevendo WAV
+crc32=0xC9FDD05E  payload=4  dados=2  band_high=22000  resync=10  parity=16
+```
+Mapeamento no `SoundbridgeRunner`:
+- Barra `[###...]` **NÃO tem percentual** → **barra INDETERMINADA (spinner)** na v1. (Determinismo de
+  % fica para depois, só se um run `--play` real provar que a barra redesenha com largura contável.)
+- `auto: payload (\d+) bytes -> (.+)` → linha de log (decisão do auto).
+- Qualquer outra linha (ex. `Escrevendo WAV`; no `--play` será outro rótulo) → **stream ao log**
+  (não hardcodar rótulo).
+- **Linha de sucesso ("done"):**
+  `crc32=(0x[0-9A-Fa-f]+)\s+payload=(\d+)\s+dados=(\d+)\s+band_high=(\d+)\s+resync=(\S+)\s+parity=(\S+)`
+- **Regra final:** `exitCode==0` **e** linha `crc32=` vista → sucesso. Senão (exit≠0 ou traceback no
+  stderr) → falha → **Retentar**.
+
+### Regras de execução do subprocess (do contrato)
+1. **Forçar UTF-8:** env `PYTHONUTF8=1` + `PYTHONIOENCODING=utf-8`, ler stdout como UTF-8 (sem isso
+   a saída vem com mojibake — ex. "saida"/"disponiveis" sem acento).
+2. **SEMPRE passar `--device N`.** `--play` sem device é **interativo** (pergunta no stdin) → trava
+   o subprocess.
+3. **QPSK = ausência de flag** (não existe `--qpsk`; no modo manual, QPSK ⇒ não emitir modulação).
+4. **Dropdown:** não pré-selecionar o `(default)` do sistema (aqui é MME 44100Hz — errado). Ordem:
+   último device usado (persistido) → um **WASAPI 48000** → default. O RX exige **48000 Hz**; avisar
+   se o device escolhido for ≠48000.
 
 ## Parâmetros do soundbridge-tx (referência do comando montado)
 
 `--in ARQUIVO` (ou `--text`) · `--play --device N` (ou `--out X.wav`) · `--stereo` ·
-`--band-high N` · `--auto` (ou `--qam16/64/256/1024`) · `--fec none/r12/r23/r34` ·
+`--band-high N` · `--auto` (ou `--qam16/64/256/1024`; QPSK = **sem flag**) · `--fec none/r12/r23/r34` ·
 `--resync off/10/25/5` · `--parity off/8/16/32` · `--zip` · `--name` · `--profile` ·
-`--copymemory` · `--list-devices-json` · `--progress-json`.
+`--copymemory` · `--list-devices`.
 
 **Modo `--auto`:** ≤12KB → 1024-QAM+r12; ≤100KB → 256-QAM+r34; acima → 64-QAM+r12.
 
 ## Ordem de implementação
 
-1. **Pré-requisito (no repo `soundbridge_tx`):** adicionar `--list-devices-json` e `--progress-json`,
-   publicar `soundbridge-tx 0.2.0`. **O plugin depende disso.**
-2. **Esqueleto:** projeto Gradle + IntelliJ Platform Plugin, `plugin.xml`, a `SendByAudioAction`
+> **Passo 0 (feito):** contrato de parse da CLI 1.0.0 travado a partir da saída real (ver seção
+> "Como o plugin consome o pacote"). Não há mais dependência de republicar o pacote.
+
+1. **Esqueleto:** projeto Gradle + IntelliJ Platform Plugin, `plugin.xml`, a `SendByAudioAction`
    aparecendo no menu de contexto (sem lógica).
-3. **Settings:** `SoundbridgeSettings` + `SettingsConfigurable`.
-4. **SendDialog:** a janela com os parâmetros selecionáveis + dropdown de devices.
-5. **SoundbridgeRunner:** subprocess, ler o JSON, alimentar barra + log.
-6. **Retentar** + tratamento de erros + detecção de ambiente (Python/pacote instalados).
+2. **Settings:** `SoundbridgeSettings` + `SettingsConfigurable`.
+3. **SendDialog:** a janela com os parâmetros selecionáveis + dropdown de devices (parse do
+   `--list-devices`).
+4. **SoundbridgeRunner:** subprocess, ler o texto linha a linha, alimentar barra (indeterminada) +
+   log, detectar sucesso pelo `crc32=`/exitCode.
+5. **Retentar** + tratamento de erros + detecção de ambiente (Python/pacote instalados).
 
 ## Contexto do projeto SoundBridge
 
@@ -124,10 +155,16 @@ O `SoundbridgeRunner` lê linha a linha, faz parse do JSON e mapeia:
 
 ## Armadilhas a antecipar
 
-- **Detecção de ambiente:** rodar `soundbridge-tx --list-devices-json` no início; se falhar (Python
-  ou pacote ausente), mostrar mensagem clara com o comando de instalação.
-- **Subprocess no Windows:** cuidado com o encoding do stdout (usar UTF-8) e o buffer (ler linha a
-  linha, com flush do lado Python garantido pelo `--progress-json`).
+- **Detecção de ambiente:** rodar `soundbridge-tx --list-devices` no início; se falhar (Python ou
+  pacote ausente), mostrar mensagem clara com o comando de instalação (`pip install soundbridge-tx[live]`).
+- **Subprocess interativo:** `--play` **sem** `--device` pergunta no stdin e trava. O runner SEMPRE
+  passa `--device N`.
+- **Encoding no Windows:** forçar UTF-8 (`PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`) e ler stdout como
+  UTF-8; a saída da CLI vem com mojibake sem isso. Ler linha a linha.
+- **Barra sem percentual:** o progresso é `[###...]` sem número → barra indeterminada; o valor está
+  no log ao vivo + sucesso pelo `crc32=`/exitCode.
+- **Device errado:** o `(default)` do sistema pode não ser 48000Hz (o RX exige 48000). Preferir
+  WASAPI 48000; avisar em caso de ≠48000.
 - **Compatibilidade entre IDEs JetBrains:** não usar APIs específicas do IntelliJ IDEA; declarar a
   compatibilidade correta no `plugin.xml` (sem `<depends>` de módulos específicos de produto além
   do `com.intellij.modules.platform`).
