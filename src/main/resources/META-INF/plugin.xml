@@ -1,0 +1,21 @@
+<idea-plugin>
+    <id>com.soundbridge.plugin</id>
+    <name>SoundBridge — Enviar por Áudio</name>
+    <vendor email="cafecanudo@gmail.com" url="https://github.com/Cafecanudo">SoundBridge</vendor>
+
+    <description><![CDATA[
+        Transmite arquivos por áudio direto da IDE, usando o SoundBridge TX (soundbridge-tx).
+        Clique com o botão direito num arquivo do projeto e escolha "Enviar por Áudio".
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <actions>
+        <action id="com.soundbridge.plugin.SendByAudioAction"
+                class="com.soundbridge.plugin.SendByAudioAction"
+                text="Enviar por Áudio"
+                description="Transmite o arquivo por áudio via SoundBridge TX">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
