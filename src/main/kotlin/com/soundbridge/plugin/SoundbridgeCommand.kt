@@ -12,8 +12,10 @@ data class SendOptions(
     val deviceIndex: Int,
     val outWav: String?,
     val auto: Boolean,
-    val modulation: Modulation,
-    val fec: String,
+    val modulation: Modulation?,
+    val fec: String?,
+    val resync: String?,
+    val parity: String?,
     val zip: Boolean,
     val name: String,
     val profile: String,
@@ -36,15 +38,15 @@ object SoundbridgeCommand {
         }
         if (settings.stereo) cmd += "--stereo"
         cmd += listOf("--band-high", settings.bandHigh.toString())
-        cmd += listOf("--resync", settings.resync)
-        cmd += listOf("--parity", settings.parity)
+        if (opts.resync != null) cmd += listOf("--resync", opts.resync)
+        if (opts.parity != null) cmd += listOf("--parity", opts.parity)
         if (settings.peak.isNotBlank()) cmd += listOf("--peak", settings.peak)
         if (settings.guard.isNotBlank()) cmd += listOf("--guard", settings.guard)
         if (opts.auto) {
             cmd += "--auto"
         } else {
-            opts.modulation.flag?.let { cmd += it }
-            cmd += listOf("--fec", opts.fec)
+            opts.modulation?.flag?.let { cmd += it }
+            if (opts.fec != null) cmd += listOf("--fec", opts.fec)
         }
         if (opts.zip) cmd += "--zip"
         if (opts.name.isNotBlank()) cmd += listOf("--name", opts.name)

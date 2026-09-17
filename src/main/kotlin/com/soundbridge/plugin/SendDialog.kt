@@ -11,13 +11,13 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBRadioButton
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.COLUMNS_LARGE
+import com.intellij.ui.dsl.builder.SegmentedButton
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.AsyncProcessIcon
@@ -31,6 +31,8 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
 
     private val settings = SoundbridgeSettings.getInstance().state
     private val isDir = file.isDirectory
+    private val initialPreset =
+        Preset.entries.firstOrNull { it.name == settings.lastPreset } ?: Preset.AUTO
 
     private val deviceModel = DefaultComboBoxModel<SoundbridgeDevice>()
     private val deviceCombo = ComboBox(deviceModel).apply {
@@ -41,8 +43,7 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         isVisible = false
     }
 
-    private lateinit var autoRadio: JBRadioButton
-    private lateinit var manualRadio: JBRadioButton
+    private lateinit var presetBar: SegmentedButton<Preset>
     private val modCombo = ComboBox(DefaultComboBoxModel(Modulation.entries.toTypedArray())).apply {
         selectedItem = Modulation.entries.firstOrNull { it.name == settings.lastModulation } ?: Modulation.QAM64
         renderer = SimpleListCellRenderer.create("") { m: Modulation -> m.label }
@@ -50,6 +51,14 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
     }
     private val fecCombo = ComboBox(arrayOf("r12", "r23", "r34", "none")).apply {
         selectedItem = settings.lastFec
+        isEnabled = false
+    }
+    private val resyncCombo = ComboBox(arrayOf("off", "10", "25", "5")).apply {
+        selectedItem = settings.lastResync
+        isEnabled = false
+    }
+    private val parityCombo = ComboBox(arrayOf("off", "8", "16", "32")).apply {
+        selectedItem = settings.lastParity
         isEnabled = false
     }
 
@@ -91,7 +100,7 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         init()
         setCancelButtonText("Fechar")
         updateWavMode()
-        updateManualEnabled()
+        applyPreset(currentPreset())
         updateOkEnabled()
         loadDevicesAsync()
     }
@@ -115,37 +124,42 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
                 "Gerar WAV",
             )
         }
-        buttonsGroup {
-            row("Modo:") {
-                radioButton("AUTO (recomendado)").applyToComponent {
-                    autoRadio = this
-                    isSelected = settings.lastAuto
-                    addActionListener { updateManualEnabled() }
-                }
-                radioButton("Manual").applyToComponent {
-                    manualRadio = this
-                    isSelected = !settings.lastAuto
-                    addActionListener { updateManualEnabled() }
-                }
-                contextHelp(
-                    "AUTO escolhe modulação e FEC pelo tamanho do arquivo (recomendado). " +
-                        "Manual permite fixar os dois.",
-                    "Modo",
-                )
-            }
+        row("Qualidade:") {
+            presetBar = segmentedButton(Preset.entries.toList()) { text = it.label }
+            presetBar.whenItemSelected { applyPreset(it) }
+            presetBar.selectedItem = initialPreset
+            contextHelp(
+                "Perfil de transmissão: preenche modulação, FEC, resync e paridade. " +
+                    "AUTO escolhe pelo tamanho; CUSTOM deixa tudo editável.",
+                "Qualidade",
+            )
         }
         row("Modulação:") {
             cell(modCombo)
             contextHelp(
                 "Densidade da modulação. Mais densa = mais rápida, menos robusta. " +
-                    "64-QAM é o teto robusto.",
+                    "64-QAM é o teto robusto. Editável só no CUSTOM.",
                 "Modulação",
             )
             label("FEC:")
             cell(fecCombo)
             contextHelp(
-                "Correção de erro. r12 robusto; r23/r34 mais leves e rápidos; none sem proteção.",
+                "Correção de erro. r12 robusto; r23/r34 mais leves; none sem proteção. Editável só no CUSTOM.",
                 "FEC",
+            )
+        }
+        row("Resync:") {
+            cell(resyncCombo)
+            contextHelp(
+                "Re-sincronização contra drift de clock a cada N blocos. Menor = mais robusto. " +
+                    "Editável só no CUSTOM.",
+                "Resync",
+            )
+            label("Paridade:")
+            cell(parityCombo)
+            contextHelp(
+                "Blocos de paridade para recuperar perdas. Maior = mais robusto. Editável só no CUSTOM.",
+                "Paridade",
             )
         }
         row("Nome:") {
@@ -182,21 +196,43 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             appendLog("Selecione um device de saída.")
             return
         }
+        val preset = currentPreset()
         val outWav = if (wav) wavOutputPath() else null
         if (device != null) settings.lastDeviceIndex = device.index
-        settings.lastAuto = !manualRadio.isSelected
-        settings.lastModulation = (modCombo.selectedItem as? Modulation ?: Modulation.QAM64).name
-        settings.lastFec = fecCombo.selectedItem as? String ?: "r12"
+        settings.lastPreset = preset.name
+        if (preset.isCustom) {
+            settings.lastModulation = (modCombo.selectedItem as? Modulation ?: Modulation.QAM64).name
+            settings.lastFec = fecCombo.selectedItem as? String ?: "r12"
+            settings.lastResync = resyncCombo.selectedItem as? String ?: "10"
+            settings.lastParity = parityCombo.selectedItem as? String ?: "16"
+        }
         settings.lastZip = zipCheck.isSelected
         settings.lastProfile = profileField.text.trim()
         settings.lastCopymemory = copyCheck.isSelected
         if (!isDir) settings.lastGenerateWav = wav
+
+        val mod: Modulation?
+        val fec: String?
+        val resync: String?
+        val parity: String?
+        when {
+            preset.isAuto -> { mod = null; fec = null; resync = null; parity = null }
+            preset.isCustom -> {
+                mod = modCombo.selectedItem as? Modulation
+                fec = fecCombo.selectedItem as? String
+                resync = resyncCombo.selectedItem as? String
+                parity = parityCombo.selectedItem as? String
+            }
+            else -> { mod = preset.modulation; fec = preset.fec; resync = preset.resync; parity = preset.parity }
+        }
         val opts = SendOptions(
             deviceIndex = device?.index ?: -1,
             outWav = outWav,
-            auto = !manualRadio.isSelected,
-            modulation = modCombo.selectedItem as? Modulation ?: Modulation.QAM64,
-            fec = fecCombo.selectedItem as? String ?: "r12",
+            auto = preset.isAuto,
+            modulation = mod,
+            fec = fec,
+            resync = resync,
+            parity = parity,
             zip = zipCheck.isSelected,
             name = if (isDir) "" else nameField.text.trim(),
             profile = profileField.text.trim(),
@@ -214,6 +250,23 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             return
         }
         super.doCancelAction()
+    }
+
+    private fun currentPreset(): Preset =
+        if (::presetBar.isInitialized) presetBar.selectedItem ?: Preset.AUTO else initialPreset
+
+    private fun applyPreset(p: Preset) {
+        if (!p.isCustom && !p.isAuto) {
+            p.modulation?.let { modCombo.selectedItem = it }
+            p.fec?.let { fecCombo.selectedItem = it }
+            p.resync?.let { resyncCombo.selectedItem = it }
+            p.parity?.let { parityCombo.selectedItem = it }
+        }
+        val editable = p.isCustom
+        modCombo.isEnabled = editable
+        fecCombo.isEnabled = editable
+        resyncCombo.isEnabled = editable
+        parityCombo.isEnabled = editable
     }
 
     private fun startTransmit(cmd: List<String>, outWav: String?) {
@@ -271,22 +324,17 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
     }
 
     private fun setInputsEnabled(enabled: Boolean) {
+        val custom = currentPreset().isCustom
         deviceCombo.isEnabled = enabled && !wavCheck.isSelected
         wavCheck.isEnabled = enabled && !isDir
-        autoRadio.isEnabled = enabled
-        manualRadio.isEnabled = enabled
-        modCombo.isEnabled = enabled && manualRadio.isSelected
-        fecCombo.isEnabled = enabled && manualRadio.isSelected
+        modCombo.isEnabled = enabled && custom
+        fecCombo.isEnabled = enabled && custom
+        resyncCombo.isEnabled = enabled && custom
+        parityCombo.isEnabled = enabled && custom
         zipCheck.isEnabled = enabled
         nameField.isEnabled = enabled && !isDir
         profileField.isEnabled = enabled
         copyCheck.isEnabled = enabled
-    }
-
-    private fun updateManualEnabled() {
-        val manual = manualRadio.isSelected
-        modCombo.isEnabled = manual
-        fecCombo.isEnabled = manual
     }
 
     private fun updateWavMode() {

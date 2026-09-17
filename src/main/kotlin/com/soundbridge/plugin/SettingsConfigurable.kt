@@ -46,24 +46,6 @@ class SettingsConfigurable : Configurable {
                 }
             }
             group("Avançado") {
-                row("Resync:") {
-                    comboBox(listOf("off", "10", "25", "5"))
-                        .bindItem({ state.resync }, { if (it != null) state.resync = it })
-                    contextHelp(
-                        "Reinsere marcadores de sincronização a cada N blocos, corrigindo drift de " +
-                            "clock em transmissões longas. 10 é o padrão.",
-                        "Resync",
-                    )
-                }
-                row("Parity:") {
-                    comboBox(listOf("off", "8", "16", "32"))
-                        .bindItem({ state.parity }, { if (it != null) state.parity = it })
-                    contextHelp(
-                        "Blocos de paridade para recuperar perdas sem retransmitir. Agrupa a cada N " +
-                            "blocos. 16 é o padrão.",
-                        "Parity",
-                    )
-                }
                 row("Peak (0–1):") {
                     textField().bindText(state::peak).comment("Vazio = usa o default do tx")
                     contextHelp(
