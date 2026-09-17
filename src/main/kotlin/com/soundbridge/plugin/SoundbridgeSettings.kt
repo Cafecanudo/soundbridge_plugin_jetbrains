@@ -19,6 +19,13 @@ class SoundbridgeSettings : PersistentStateComponent<SoundbridgeSettings.State> 
         var peak: String = "",
         var guard: String = "",
         var lastDeviceIndex: Int = -1,
+        var lastAuto: Boolean = true,
+        var lastModulation: String = "QAM64",
+        var lastFec: String = "r12",
+        var lastZip: Boolean = true,
+        var lastProfile: String = "",
+        var lastCopymemory: Boolean = false,
+        var lastGenerateWav: Boolean = false,
     )
 
     private var state = State()

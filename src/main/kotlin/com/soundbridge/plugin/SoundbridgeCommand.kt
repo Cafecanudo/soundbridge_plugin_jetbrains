@@ -10,6 +10,7 @@ enum class Modulation(val label: String, val flag: String?) {
 
 data class SendOptions(
     val deviceIndex: Int,
+    val outWav: String?,
     val auto: Boolean,
     val modulation: Modulation,
     val fec: String,
@@ -28,7 +29,11 @@ object SoundbridgeCommand {
         val cmd = mutableListOf<String>()
         cmd += tokenize(settings.commandBase)
         cmd += listOf("--in", filePath)
-        cmd += listOf("--play", "--device", opts.deviceIndex.toString())
+        if (opts.outWav != null) {
+            cmd += listOf("--out", opts.outWav)
+        } else {
+            cmd += listOf("--play", "--device", opts.deviceIndex.toString())
+        }
         if (settings.stereo) cmd += "--stereo"
         cmd += listOf("--band-high", settings.bandHigh.toString())
         cmd += listOf("--resync", settings.resync)
@@ -45,6 +50,7 @@ object SoundbridgeCommand {
         if (opts.name.isNotBlank()) cmd += listOf("--name", opts.name)
         if (opts.profile.isNotBlank()) cmd += listOf("--profile", opts.profile)
         if (opts.copymemory) cmd += "--copymemory"
+        cmd += "--verbose"
         return cmd
     }
 }
