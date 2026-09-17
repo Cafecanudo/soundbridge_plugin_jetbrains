@@ -51,9 +51,12 @@ captura a saída e mostra o progresso/log.
 | Componente | Papel |
 |---|---|
 | `plugin.xml` | registra a Action (menu de contexto) e o Settings; compatibilidade com IDEs JetBrains |
-| `SendByAudioAction` | a ação "Enviar por Áudio" no menu de contexto de um arquivo |
-| `SendDialog` | a janela de envio: config selecionável + barra de progresso + log + botão retentar |
-| `SoundbridgeRunner` | executa o `soundbridge-tx` (subprocess), lê o stdout (texto) linha a linha |
+| `SendByAudioAction` | a ação "Enviar por Áudio" no menu de contexto de um **arquivo ou pasta** |
+| `SendDialog` | a janela de envio: device, presets, WAV, log ao vivo + spinner + Cancelar |
+| `SoundbridgeRunner` | executa o `soundbridge-tx` (subprocess): `listDevices()` e `transmit()`; lê o stdout cru em chunks |
+| `SoundbridgeCommand` | monta a `List<String>` do comando (função pura) + `tokenize()` |
+| `Preset` | os perfis de qualidade (AUTO/RÁPIDO/BALANCEADO/ROBUSTO/EXPERIMENTAL/CUSTOM) |
+| `AnsiScreen` | emulador de terminal (cursor-up/clear/CR) p/ a barra do tx atualizar in-place no log |
 | `SoundbridgeSettings` | as configurações fixas (persistidas via `PersistentStateComponent`) |
 | `SettingsConfigurable` | a tela de Settings da IDE (Preferences → Tools → SoundBridge) |
 
@@ -68,13 +71,23 @@ captura a saída e mostra o progresso/log.
 ## Divisão dos parâmetros (DECISÃO TOMADA)
 
 **Fixos — nos Settings do plugin (uma vez):** comando do `soundbridge-tx` (ou caminho do Python),
-`band-high` (22000), `stereo` (sim), `resync`, `parity`, `peak`, `guard` (avançados, com defaults).
+`band-high` (22000), `stereo` (sim), `peak`, `guard` (avançados, opcionais). `--verbose` é sempre ligado.
 
 **Selecionáveis — na Janela de Envio (a cada envio):**
-- **Device** de saída (dropdown, via `--list-devices` parseado)
-- **Modo:** AUTO (recomendado) ou manual → se manual: **modulação** + **FEC**
-- **zip** (checkbox), **name** (default = nome do arquivo), **profile** (opcional),
-  **copymemory** (checkbox)
+- **Device** de saída (dropdown, via `--list-devices` parseado). Aceita **arquivo ou pasta** (`--in <dir>`).
+- **Qualidade (preset)** — barra segmentada (`SegmentedButton`): AUTO · RÁPIDO · BALANCEADO · ROBUSTO ·
+  EXPERIMENTAL · CUSTOM. O preset preenche e **trava** modulação + FEC + resync + paridade; só **CUSTOM**
+  libera esses 4 campos; **AUTO** passa só `--auto`. Ver [PRESETS-HANDOFF.md](PRESETS-HANDOFF.md).
+- **Gerar WAV** (checkbox) — em vez de tocar, gera `<pasta>/<nome>.wav` (`--out`); o botão vira "Salvar".
+  Desabilitado para pasta.
+- **zip** (checkbox, **default ON**), **name** (default = nome do arquivo; não se aplica a pastas),
+  **profile** (opcional), **copymemory** (checkbox).
+
+> **`resync`/`parity` saíram dos Settings** — agora são por-envio (definidos pelo preset ou pelo CUSTOM).
+> No AUTO, o plugin **não emite** `--resync/--parity` (usa o default do tx).
+
+A janela **persiste as últimas escolhas** (preset, device, mod/FEC/resync/parity do CUSTOM, zip, profile,
+copymemory, WAV) — **exceto o nome**, que é sempre o do arquivo selecionado.
 
 ## Como o plugin consome o pacote (contrato de parse — CLI 1.0.0, Opção B)
 
@@ -127,7 +140,7 @@ Mapeamento no `SoundbridgeRunner`:
 `--in ARQUIVO` (ou `--text`) · `--play --device N` (ou `--out X.wav`) · `--stereo` ·
 `--band-high N` · `--auto` (ou `--qam16/64/256/1024`; QPSK = **sem flag**) · `--fec none/r12/r23/r34` ·
 `--resync off/10/25/5` · `--parity off/8/16/32` · `--zip` · `--name` · `--profile` ·
-`--copymemory` · `--list-devices`.
+`--copymemory` · `--verbose` (sempre) · `--list-devices`.
 
 **Modo `--auto`:** ≤12KB → 1024-QAM+r12; ≤100KB → 256-QAM+r34; acima → 64-QAM+r12.
 
@@ -136,14 +149,12 @@ Mapeamento no `SoundbridgeRunner`:
 > **Passo 0 (feito):** contrato de parse da CLI 1.0.0 travado a partir da saída real (ver seção
 > "Como o plugin consome o pacote"). Não há mais dependência de republicar o pacote.
 
-1. **Esqueleto:** projeto Gradle + IntelliJ Platform Plugin, `plugin.xml`, a `SendByAudioAction`
-   aparecendo no menu de contexto (sem lógica).
-2. **Settings:** `SoundbridgeSettings` + `SettingsConfigurable`.
-3. **SendDialog:** a janela com os parâmetros selecionáveis + dropdown de devices (parse do
-   `--list-devices`).
-4. **SoundbridgeRunner:** subprocess, ler o texto linha a linha, alimentar barra (indeterminada) +
-   log, detectar sucesso pelo `crc32=`/exitCode.
-5. **Retentar** + tratamento de erros + detecção de ambiente (Python/pacote instalados).
+1. ✅ **Esqueleto:** Gradle + IntelliJ Platform Plugin (1.x), `plugin.xml`, `SendByAudioAction` no menu.
+2. ✅ **Settings:** `SoundbridgeSettings` + `SettingsConfigurable`.
+3. ✅ **SendDialog:** janela + dropdown de devices (parse do `--list-devices`).
+4. ✅ **SoundbridgeRunner:** subprocess, log ao vivo (com `AnsiScreen`), sucesso pelo `crc32=`/exitCode.
+   \+ ✅ **Presets** (`SegmentedButton`), modo **WAV**, envio de **pasta**, persistência de escolhas.
+5. ⬜ **Retentar** + tratamento de erros + detecção de ambiente (mensagem/CTA de instalação na abertura).
 
 ## Contexto do projeto SoundBridge
 

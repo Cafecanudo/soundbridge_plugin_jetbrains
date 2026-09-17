@@ -185,16 +185,19 @@ Mapeamento do `SoundbridgeRunner`:
 **Fixos — nos Settings do plugin (configurados uma vez):**
 - Comando do `soundbridge-tx` (ou caminho do Python) — como invocar o pacote
 - `band-high` (22000), `stereo` (sim)
-- `resync`, `parity`, `peak`, `guard` (avançados, com defaults)
+- `peak`, `guard` (avançados, opcionais). `--verbose` sempre ligado.
 
 **Selecionáveis — na Janela de Envio (a cada envio):**
-- **Device** de saída (dropdown, populado via parse do `--list-devices`)
-- **Modo:** AUTO (recomendado) ou manual
-  - se manual: **modulação** (qpsk/16qam/64qam/256qam/1024qam; QPSK = **sem flag**) + **FEC** (r12/r23/r34)
-- **zip** (checkbox)
-- **name** (opcional; default = nome do arquivo)
-- **profile** (opcional)
-- **copymemory** (checkbox)
+- **Device** de saída (dropdown, via parse do `--list-devices`). Aceita **arquivo ou pasta** (`--in <dir>`).
+- **Qualidade (preset)** — barra `SegmentedButton`: AUTO · RÁPIDO · BALANCEADO · ROBUSTO · EXPERIMENTAL ·
+  CUSTOM. Preenche e trava modulação + FEC + resync + paridade; só **CUSTOM** libera; **AUTO** = `--auto`.
+  (Ver `PRESETS-HANDOFF.md`.)
+- **Gerar WAV** (checkbox) — `--out <pasta>/<nome>.wav`; o botão vira "Salvar"; desabilitado para pasta.
+- **zip** (default ON), **name** (default = nome do arquivo; não se aplica a pastas), **profile** (opcional),
+  **copymemory** (checkbox)
+
+> **`resync`/`parity` são por-envio** (preset/CUSTOM), não mais fixos nos Settings. No AUTO não são emitidos.
+> A janela persiste as últimas escolhas, exceto o nome.
 
 ---
 
