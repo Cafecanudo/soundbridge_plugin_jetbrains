@@ -28,27 +28,33 @@ def main() -> None:
 
     if git("rev-parse", "--abbrev-ref", "HEAD") != "main":
         sys.exit("Não está na branch 'main'.")
-    if git("status", "--porcelain"):
-        sys.exit("Working tree com alterações não commitadas — commite antes.")
-    if git("tag", "-l", tag):
-        sys.exit(f"A tag {tag} já existe.")
 
-    print(f"\nRelease {tag}:")
-    print("  1. bump pluginVersion no gradle.properties")
-    print("  2. commit + tag + push (dispara o build/Release no GitHub Actions)")
+    tag_exists = git("tag", "-l", tag) != ""
+
+    if tag_exists:
+        print(f"Tag {tag} já existe localmente — vou apenas (re)enviar main + tag.")
+    else:
+        if git("status", "--porcelain"):
+            sys.exit("Working tree com alterações não commitadas — commite antes.")
+        print(f"\nRelease {tag}:")
+        print("  1. bump pluginVersion no gradle.properties")
+        print("  2. commit + tag")
+        print("  3. push (dispara o build/Release no GitHub Actions)")
+
     if input("Continuar? [s/N] ").strip().lower() != "s":
         sys.exit("Cancelado.")
 
-    text = GRADLE_PROPS.read_text(encoding="utf-8")
-    new_text, count = re.subn(r"(?m)^pluginVersion=.*$", f"pluginVersion={version}", text)
-    if count == 0:
-        sys.exit("pluginVersion não encontrado no gradle.properties.")
-    if new_text != text:
-        GRADLE_PROPS.write_text(new_text, encoding="utf-8")
-        git("add", "gradle.properties")
-        git("commit", "-m", f"chore: release {tag}")
+    if not tag_exists:
+        text = GRADLE_PROPS.read_text(encoding="utf-8")
+        new_text, count = re.subn(r"(?m)^pluginVersion=.*$", f"pluginVersion={version}", text)
+        if count == 0:
+            sys.exit("pluginVersion não encontrado no gradle.properties.")
+        if new_text != text:
+            GRADLE_PROPS.write_text(new_text, encoding="utf-8")
+            git("add", "gradle.properties")
+            git("commit", "-m", f"chore: release {tag}")
+        git("tag", "-a", tag, "-m", f"Release {tag}")
 
-    git("tag", "-a", tag, "-m", f"Release {tag}")
     git("push", "origin", "main")
     git("push", "origin", tag)
 

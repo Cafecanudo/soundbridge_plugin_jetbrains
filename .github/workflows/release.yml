@@ -32,4 +32,15 @@ jobs:
         with:
           name: SoundBridge Plugin ${{ github.ref_name }}
           files: build/distributions/*.zip
-          generate_release_notes: true
+          body: |
+            ### Instalação
+            Baixe o **`soundbridge-plugin-${{ env.PLUGIN_VERSION }}.zip`** em **Assets** e instale na IDE:
+            **Settings → Plugins → ⚙ → Install Plugin from Disk…** → selecione o `.zip`.
+
+            **Requer** Python 3.10+ e o pacote:
+            ```
+            pip install soundbridge-tx[live]
+            ```
+
+            _Os "Source code (zip/tar.gz)" são anexados automaticamente pelo GitHub — para usar o plugin,
+            baixe o `.zip` acima._
