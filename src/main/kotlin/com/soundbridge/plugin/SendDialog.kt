@@ -98,7 +98,9 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         isEnabled = false
     }
 
-    private val zipCheck = JBCheckBox("zip").apply { isSelected = if (isText) false else settings.lastZip }
+    private val zipCheck = JBCheckBox("zip").apply {
+        isSelected = if (isText) settings.lastZipText else settings.lastZip
+    }
     private val nameField = JBTextField(if (isDir) "" else defaultName).apply { isEnabled = !isDir }
     private val profileField = JBTextField(settings.lastProfile)
     private val copyCheck = JBCheckBox("copymemory").apply {
@@ -109,8 +111,9 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         isSelected = !isDir && !isText && settings.lastGenerateWav
         isEnabled = !isDir && !isText
     }
-    private val showLogCheck = JBCheckBox("Mostrar log").apply { isSelected = false }
+    private val showLogCheck = JBCheckBox("Mostrar log").apply { isSelected = settings.lastShowLog }
     private val autoSendCheck = JBCheckBox("Auto-Enviar").apply { isSelected = settings.lastAutoSend }
+    private val autoCloseCheck = JBCheckBox("Auto-Close").apply { isSelected = settings.lastAutoClose }
 
     private val processIcon = AsyncProcessIcon("soundbridge-send").apply { isVisible = false }
     private val statusLabel = JBLabel("").apply { isVisible = false }
@@ -120,7 +123,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
     }
     private val logScroll = JBScrollPane(logArea).apply {
         preferredSize = Dimension(640, 180)
-        isVisible = false
+        isVisible = settings.lastShowLog
     }
 
     @Volatile
@@ -144,10 +147,16 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
             updateWavMode()
             updateOkEnabled()
         }
+        zipCheck.addActionListener {
+            if (isText) settings.lastZipText = zipCheck.isSelected
+            else settings.lastZip = zipCheck.isSelected
+        }
         showLogCheck.addActionListener {
+            settings.lastShowLog = showLogCheck.isSelected
             logScroll.isVisible = showLogCheck.isSelected
             window?.pack()
         }
+        autoCloseCheck.addActionListener { settings.lastAutoClose = autoCloseCheck.isSelected }
         init()
         setCancelButtonText("Fechar")
         updateWavMode()
@@ -243,6 +252,8 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
             contextHelp("Mostra/oculta o log detalhado da transmissão.", "Mostrar log")
             cell(autoSendCheck)
             contextHelp("Quando ligado, na próxima vez a janela abre e já envia automaticamente.", "Auto-Enviar")
+            cell(autoCloseCheck)
+            contextHelp("Fecha a janela automaticamente após um envio bem-sucedido.", "Auto-Close")
         }
         row("") {
             cell(processIcon)
@@ -281,7 +292,6 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
             settings.lastResync = resyncCombo.selectedItem as? String ?: "10"
             settings.lastParity = parityCombo.selectedItem as? String ?: "16"
         }
-        if (!isText) settings.lastZip = zipCheck.isSelected
         settings.lastProfile = profileField.text.trim()
         if (!isDir && !isText) settings.lastGenerateWav = wav
         settings.lastAutoSend = autoSendCheck.isSelected
@@ -408,6 +418,9 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
                 }
             }
         }
+        if (autoCloseCheck.isSelected && !cancelled && result is TransmitResult.Success) {
+            close(OK_EXIT_CODE)
+        }
     }
 
     private fun wavOutputPath(): String {
@@ -418,6 +431,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
 
     private fun createTempTextFile(content: String): File {
         val tmp = File.createTempFile("soundbridge-", ".txt")
+        tmp.deleteOnExit()
         tmp.writeText(content, Charsets.UTF_8)
         return tmp
     }
@@ -435,6 +449,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         nameField.isEnabled = enabled && !isDir
         profileField.isEnabled = enabled
         autoSendCheck.isEnabled = enabled
+        autoCloseCheck.isEnabled = enabled
         textInputArea.isEnabled = enabled
     }
 

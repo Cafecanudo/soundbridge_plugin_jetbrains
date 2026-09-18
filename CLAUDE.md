@@ -88,10 +88,13 @@ No modo texto a 1ª linha é um **TextArea editável** (dá pra alterar antes de
   (desabilitado em pasta e texto).
 - **zip** (default ON p/ arquivo/pasta; OFF p/ texto), **name** (default = nome do arquivo; vazio no texto),
   **profile** (opcional), **copymemory** (**só no texto**: marcado/habilitado; em arquivo/pasta off/desabilitado).
-- **Mostrar log** (off por default — log oculto; aparece sozinho em erro/falha).
-- **Auto-Enviar** (persistido) — na próxima abertura, a janela **já envia** ao abrir.
+- **Mostrar log** — off por default; log oculto; aparece sozinho em erro/falha.
+- **Auto-Enviar** — na próxima abertura a janela **já envia** ao abrir.
+- **Auto-Close** — fecha a janela após um envio **bem-sucedido** (em falha fica aberta).
 
 > **`resync`/`parity` saíram dos Settings** — por-envio (preset/CUSTOM). No AUTO não são emitidos.
+> **zip, Mostrar log, Auto-Enviar e Auto-Close** persistem **na hora que são marcados** (zip tem chave
+> própria para texto — default OFF — e para arquivo/pasta — default ON).
 
 ### Envio de texto (sempre via arquivo temporário)
 A seleção é **sempre** gravada num **arquivo temporário único** e enviada com `--in <temp>` (+ `--zip` se
