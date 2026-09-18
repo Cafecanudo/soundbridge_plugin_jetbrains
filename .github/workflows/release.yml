@@ -31,6 +31,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: SoundBridge Plugin ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          make_latest: "true"
           files: build/distributions/*.zip
           body: |
             ### Instalação
