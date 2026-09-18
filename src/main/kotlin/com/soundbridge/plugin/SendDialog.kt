@@ -268,8 +268,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         val preset = currentPreset()
         val outWav = if (wav) wavOutputPath() else null
         val name = when {
-            isText && zipCheck.isSelected -> nameField.text.trim().ifBlank { "texto.txt" }
-            isText -> nameField.text.trim()
+            isText -> nameField.text.trim().ifBlank { "texto.txt" }
             isDir -> ""
             else -> nameField.text.trim()
         }
@@ -303,7 +302,6 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         }
 
         val input: List<String> = when {
-            isText && !zipCheck.isSelected -> listOf("--text", content)
             isText -> {
                 tempTextFile = createTempTextFile(content)
                 listOf("--in", tempTextFile!!.path)

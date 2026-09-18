@@ -197,8 +197,9 @@ Mapeamento do `SoundbridgeRunner`:
   **profile** (opcional), **copymemory** (**só no texto**), **Mostrar log** (off default), **Auto-Enviar** (persistido).
 
 **Fonte também pode ser texto selecionado** (menu do editor, ação `SendTextByAudioAction`): TextArea editável;
-zip OFF → `--text <seleção>` (arg único; no log exibido entre aspas com escape; execução crua). zip ON →
-arquivo temp + `--in <temp> --zip` (à prova de quoting), apagado ao fim.
+a seleção é **sempre** gravada num arquivo temp único e enviada via `--in <temp>` (+ `--zip` se marcado),
+apagado ao fim — evita o bug de quoting do `ProcessBuilder` no Windows (aspas embutidas). Nome no RX =
+campo Nome, ou `texto.txt` se vazio.
 
 > **`resync`/`parity` são por-envio** (preset/CUSTOM), não mais fixos nos Settings. No AUTO não são emitidos.
 > A janela persiste as últimas escolhas, exceto o **nome** e o **texto**.

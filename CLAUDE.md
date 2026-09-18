@@ -93,12 +93,12 @@ No modo texto a 1ª linha é um **TextArea editável** (dá pra alterar antes de
 
 > **`resync`/`parity` saíram dos Settings** — por-envio (preset/CUSTOM). No AUTO não são emitidos.
 
-### Envio de texto (`--text` vs `--in`)
-- **zip OFF:** `--text <seleção>` — vai como **arg único** do subprocess (sem shell). No **log** aparece
-  entre aspas com escape (representação copiável); na execução vai **cru** (NÃO colocar aspas literais —
-  o tx transmitiria as aspas como conteúdo).
-- **zip ON:** grava a seleção num **arquivo temporário** e usa `--in <temp> --zip` (à prova de quoting);
-  o temp é apagado ao fim. Nome no RX = campo Nome, ou `texto.txt` se vazio.
+### Envio de texto (sempre via arquivo temporário)
+A seleção é **sempre** gravada num **arquivo temporário único** e enviada com `--in <temp>` (+ `--zip` se
+marcado), apagado ao fim. Motivo: o `ProcessBuilder` do Java no Windows **não passa aspas embutidas** de
+forma confiável (JDK-8131908) — o temp file evita qualquer questão de quoting, independente do conteúdo.
+Nome no RX = campo Nome, ou `texto.txt` se vazio. `copymemory` (padrão no texto) faz o RX copiar para a
+área de transferência.
 
 A janela **persiste as últimas escolhas** (preset, device, CUSTOM, zip [arquivo], profile, WAV, Auto-Enviar)
 — **exceto o nome** e o **texto**.
