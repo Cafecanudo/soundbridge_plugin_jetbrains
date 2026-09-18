@@ -26,6 +26,7 @@ class SoundbridgeSettings : PersistentStateComponent<SoundbridgeSettings.State> 
         var lastProfile: String = "",
         var lastCopymemory: Boolean = false,
         var lastGenerateWav: Boolean = false,
+        var lastAutoSend: Boolean = false,
     )
 
     private var state = State()

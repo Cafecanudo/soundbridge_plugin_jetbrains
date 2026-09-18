@@ -192,12 +192,16 @@ Mapeamento do `SoundbridgeRunner`:
 - **Qualidade (preset)** — barra `SegmentedButton`: AUTO · RÁPIDO · BALANCEADO · ROBUSTO · EXPERIMENTAL ·
   CUSTOM. Preenche e trava modulação + FEC + resync + paridade; só **CUSTOM** libera; **AUTO** = `--auto`.
   (Ver `PRESETS-HANDOFF.md`.)
-- **Gerar WAV** (checkbox) — `--out <pasta>/<nome>.wav`; o botão vira "Salvar"; desabilitado para pasta.
-- **zip** (default ON), **name** (default = nome do arquivo; não se aplica a pastas), **profile** (opcional),
-  **copymemory** (checkbox)
+- **Gerar WAV** (checkbox) — `--out <pasta>/<nome>.wav`; botão vira "Salvar"; só para arquivo (off em pasta/texto).
+- **zip** (default ON p/ arquivo/pasta; OFF p/ texto), **name** (default = nome do arquivo; vazio no texto),
+  **profile** (opcional), **copymemory** (**só no texto**), **Mostrar log** (off default), **Auto-Enviar** (persistido).
+
+**Fonte também pode ser texto selecionado** (menu do editor, ação `SendTextByAudioAction`): TextArea editável;
+zip OFF → `--text <seleção>` (arg único; no log exibido entre aspas com escape; execução crua). zip ON →
+arquivo temp + `--in <temp> --zip` (à prova de quoting), apagado ao fim.
 
 > **`resync`/`parity` são por-envio** (preset/CUSTOM), não mais fixos nos Settings. No AUTO não são emitidos.
-> A janela persiste as últimas escolhas, exceto o nome.
+> A janela persiste as últimas escolhas, exceto o **nome** e o **texto**.
 
 ---
 

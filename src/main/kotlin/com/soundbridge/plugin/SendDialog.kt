@@ -27,12 +27,48 @@ import java.io.File
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
 
-class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapper(project) {
+sealed interface SendSource {
+    data class FileOrDir(val file: VirtualFile) : SendSource
+    data class TextSelection(val content: String) : SendSource
+}
+
+private fun textPreview(t: String): String {
+    val oneLine = t.replace(Regex("\\s+"), " ").trim()
+    return if (oneLine.length > 80) oneLine.take(80) + "…" else oneLine
+}
+
+private fun shellDisplay(cmd: List<String>): String = cmd.joinToString(" ") { a ->
+    if (a.isEmpty() || a.any { it == ' ' || it == '"' || it == '\n' || it == '\t' }) {
+        "\"" + a.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
+    } else {
+        a
+    }
+}
+
+class SendDialog(project: Project?, private val source: SendSource) : DialogWrapper(project) {
 
     private val settings = SoundbridgeSettings.getInstance().state
-    private val isDir = file.isDirectory
+    private val vfile: VirtualFile? = (source as? SendSource.FileOrDir)?.file
+    private val isText = source is SendSource.TextSelection
+    private val isDir = vfile?.isDirectory == true
+    private val initialText = (source as? SendSource.TextSelection)?.content ?: ""
+    private val sourceLabel = when (source) {
+        is SendSource.FileOrDir -> if (source.file.isDirectory) "Pasta:" else "Arquivo:"
+        is SendSource.TextSelection -> "Texto:"
+    }
+    private val sourceDisplay = when (source) {
+        is SendSource.FileOrDir -> source.file.path
+        is SendSource.TextSelection -> textPreview(source.content)
+    }
+    private val defaultName = if (source is SendSource.FileOrDir) source.file.name else ""
     private val initialPreset =
         Preset.entries.firstOrNull { it.name == settings.lastPreset } ?: Preset.AUTO
+    private val autoSendOnOpen = settings.lastAutoSend
+
+    private val textInputArea = JBTextArea(initialText, 6, 50).apply {
+        lineWrap = true
+        wrapStyleWord = true
+    }
 
     private val deviceModel = DefaultComboBoxModel<SoundbridgeDevice>()
     private val deviceCombo = ComboBox(deviceModel).apply {
@@ -62,14 +98,19 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         isEnabled = false
     }
 
-    private val zipCheck = JBCheckBox("zip").apply { isSelected = settings.lastZip }
-    private val nameField = JBTextField(if (isDir) "" else file.name).apply { isEnabled = !isDir }
+    private val zipCheck = JBCheckBox("zip").apply { isSelected = if (isText) false else settings.lastZip }
+    private val nameField = JBTextField(if (isDir) "" else defaultName).apply { isEnabled = !isDir }
     private val profileField = JBTextField(settings.lastProfile)
-    private val copyCheck = JBCheckBox("copymemory").apply { isSelected = settings.lastCopymemory }
-    private val wavCheck = JBCheckBox("Gerar WAV (não toca)").apply {
-        isSelected = !isDir && settings.lastGenerateWav
-        isEnabled = !isDir
+    private val copyCheck = JBCheckBox("copymemory").apply {
+        isSelected = isText
+        isEnabled = isText
     }
+    private val wavCheck = JBCheckBox("Gerar WAV (não toca)").apply {
+        isSelected = !isDir && !isText && settings.lastGenerateWav
+        isEnabled = !isDir && !isText
+    }
+    private val showLogCheck = JBCheckBox("Mostrar log").apply { isSelected = false }
+    private val autoSendCheck = JBCheckBox("Auto-Enviar").apply { isSelected = settings.lastAutoSend }
 
     private val processIcon = AsyncProcessIcon("soundbridge-send").apply { isVisible = false }
     private val statusLabel = JBLabel("").apply { isVisible = false }
@@ -77,12 +118,18 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         isEditable = false
         lineWrap = true
     }
+    private val logScroll = JBScrollPane(logArea).apply {
+        preferredSize = Dimension(640, 180)
+        isVisible = false
+    }
 
     @Volatile
     private var process: Process? = null
     private var running = false
     private var cancelled = false
     private var savedWavPath: String? = null
+    private var tempTextFile: File? = null
+    private var autoSendFired = false
 
     private val logText = StringBuilder()
     private var screen: AnsiScreen? = null
@@ -97,6 +144,10 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             updateWavMode()
             updateOkEnabled()
         }
+        showLogCheck.addActionListener {
+            logScroll.isVisible = showLogCheck.isSelected
+            window?.pack()
+        }
         init()
         setCancelButtonText("Fechar")
         updateWavMode()
@@ -106,7 +157,14 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
     }
 
     override fun createCenterPanel(): JComponent = panel {
-        row(if (isDir) "Pasta:" else "Arquivo:") { label(file.path) }
+        if (isText) {
+            row("Texto:") {
+                cell(JBScrollPane(textInputArea).apply { preferredSize = Dimension(640, 110) })
+                    .align(AlignX.FILL)
+            }
+        } else {
+            row(sourceLabel) { label(sourceDisplay) }
+        }
         row("Dispositivo:") {
             cell(deviceCombo).align(AlignX.FILL)
             contextHelp(
@@ -120,7 +178,7 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             cell(wavCheck)
             contextHelp(
                 "Gera um arquivo .wav na pasta do arquivo (<nome>.wav) em vez de tocar ao vivo. " +
-                    "O botão vira Salvar e o device é ignorado.",
+                    "O botão vira Salvar; device ignorado. Não se aplica a texto/pasta.",
                 "Gerar WAV",
             )
         }
@@ -165,7 +223,8 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         row("Nome:") {
             cell(nameField).align(AlignX.FILL).columns(COLUMNS_LARGE)
             contextHelp(
-                "Nome do arquivo salvo no receptor. Default = nome do arquivo. Aceita subpasta (docs/a.txt).",
+                "Nome do arquivo salvo no receptor. No texto, se vazio o RX usa a área de transferência. " +
+                    "Aceita subpasta (docs/a.txt).",
                 "Name",
             )
         }
@@ -175,17 +234,22 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         }
         row("") {
             cell(zipCheck)
-            contextHelp("Comprime os dados antes de enviar (o RX descomprime). Grande ganho em texto/dados.", "zip")
+            contextHelp("Comprime os dados antes de enviar (o RX descomprime). No texto, envia como arquivo.", "zip")
             cell(copyCheck)
-            contextHelp("O receptor copia o conteúdo recebido para a área de transferência.", "copymemory")
+            contextHelp("O receptor copia o conteúdo para a área de transferência. Só para texto selecionado.", "copymemory")
+        }
+        row("") {
+            cell(showLogCheck)
+            contextHelp("Mostra/oculta o log detalhado da transmissão.", "Mostrar log")
+            cell(autoSendCheck)
+            contextHelp("Quando ligado, na próxima vez a janela abre e já envia automaticamente.", "Auto-Enviar")
         }
         row("") {
             cell(processIcon)
             cell(statusLabel)
         }
         row("") {
-            cell(JBScrollPane(logArea).apply { preferredSize = Dimension(1040, 260) })
-                .align(Align.FILL)
+            cell(logScroll).align(Align.FILL)
         }.resizableRow()
     }
 
@@ -196,8 +260,20 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             appendLog("Selecione um device de saída.")
             return
         }
+        val content = if (isText) textInputArea.text else ""
+        if (isText && content.isBlank()) {
+            appendLog("Texto vazio.")
+            return
+        }
         val preset = currentPreset()
         val outWav = if (wav) wavOutputPath() else null
+        val name = when {
+            isText && zipCheck.isSelected -> nameField.text.trim().ifBlank { "texto.txt" }
+            isText -> nameField.text.trim()
+            isDir -> ""
+            else -> nameField.text.trim()
+        }
+
         if (device != null) settings.lastDeviceIndex = device.index
         settings.lastPreset = preset.name
         if (preset.isCustom) {
@@ -206,10 +282,10 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             settings.lastResync = resyncCombo.selectedItem as? String ?: "10"
             settings.lastParity = parityCombo.selectedItem as? String ?: "16"
         }
-        settings.lastZip = zipCheck.isSelected
+        if (!isText) settings.lastZip = zipCheck.isSelected
         settings.lastProfile = profileField.text.trim()
-        settings.lastCopymemory = copyCheck.isSelected
-        if (!isDir) settings.lastGenerateWav = wav
+        if (!isDir && !isText) settings.lastGenerateWav = wav
+        settings.lastAutoSend = autoSendCheck.isSelected
 
         val mod: Modulation?
         val fec: String?
@@ -225,6 +301,16 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             }
             else -> { mod = preset.modulation; fec = preset.fec; resync = preset.resync; parity = preset.parity }
         }
+
+        val input: List<String> = when {
+            isText && !zipCheck.isSelected -> listOf("--text", content)
+            isText -> {
+                tempTextFile = createTempTextFile(content)
+                listOf("--in", tempTextFile!!.path)
+            }
+            else -> listOf("--in", (source as SendSource.FileOrDir).file.path)
+        }
+
         val opts = SendOptions(
             deviceIndex = device?.index ?: -1,
             outWav = outWav,
@@ -234,11 +320,11 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             resync = resync,
             parity = parity,
             zip = zipCheck.isSelected,
-            name = if (isDir) "" else nameField.text.trim(),
+            name = name,
             profile = profileField.text.trim(),
             copymemory = copyCheck.isSelected,
         )
-        val cmd = SoundbridgeCommand.buildCommand(settings, opts, file.path)
+        val cmd = SoundbridgeCommand.buildCommand(settings, opts, input)
         startTransmit(cmd, outWav)
     }
 
@@ -281,7 +367,7 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         processIcon.isVisible = true
         processIcon.resume()
         appendLog("")
-        appendLog("$ " + cmd.joinToString(" "))
+        appendLog("$ " + shellDisplay(cmd))
         screen = AnsiScreen()
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = SoundbridgeRunner.transmit(
@@ -308,33 +394,50 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
             if (text.isNotEmpty() && !text.endsWith("\n")) logText.append('\n')
         }
         screen = null
+        tempTextFile?.delete()
+        tempTextFile = null
         when {
             cancelled -> appendLog("⏹ Cancelado.")
             result is TransmitResult.Success && savedWavPath != null ->
                 appendLog("✅ WAV salvo em: $savedWavPath — ${result.summary}")
             result is TransmitResult.Success -> appendLog("✅ Concluído — ${result.summary}")
-            result is TransmitResult.Failure -> appendLog("❌ Falhou:\n${result.message}")
+            result is TransmitResult.Failure -> {
+                appendLog("❌ Falhou:\n${result.message}")
+                if (!logScroll.isVisible) {
+                    showLogCheck.isSelected = true
+                    logScroll.isVisible = true
+                    window?.pack()
+                }
+            }
         }
     }
 
     private fun wavOutputPath(): String {
-        val base = nameField.text.trim().ifBlank { file.name }
-        val dir = file.parent?.path ?: return "$base.wav"
+        val base = nameField.text.trim().ifBlank { defaultName }
+        val dir = vfile?.parent?.path ?: return "$base.wav"
         return File(dir, "$base.wav").path
+    }
+
+    private fun createTempTextFile(content: String): File {
+        val tmp = File.createTempFile("soundbridge-", ".txt")
+        tmp.writeText(content, Charsets.UTF_8)
+        return tmp
     }
 
     private fun setInputsEnabled(enabled: Boolean) {
         val custom = currentPreset().isCustom
         deviceCombo.isEnabled = enabled && !wavCheck.isSelected
-        wavCheck.isEnabled = enabled && !isDir
+        wavCheck.isEnabled = enabled && !isDir && !isText
         modCombo.isEnabled = enabled && custom
         fecCombo.isEnabled = enabled && custom
         resyncCombo.isEnabled = enabled && custom
         parityCombo.isEnabled = enabled && custom
         zipCheck.isEnabled = enabled
+        copyCheck.isEnabled = enabled && isText
         nameField.isEnabled = enabled && !isDir
         profileField.isEnabled = enabled
-        copyCheck.isEnabled = enabled
+        autoSendCheck.isEnabled = enabled
+        textInputArea.isEnabled = enabled
     }
 
     private fun updateWavMode() {
@@ -346,6 +449,13 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
 
     private fun updateOkEnabled() {
         isOKActionEnabled = !running && (wavCheck.isSelected || deviceModel.size > 0)
+    }
+
+    private fun maybeAutoSend() {
+        if (autoSendOnOpen && !autoSendFired && !running && isOKActionEnabled) {
+            autoSendFired = true
+            doOKAction()
+        }
     }
 
     private fun ui(block: () -> Unit) {
@@ -376,11 +486,18 @@ class SendDialog(project: Project?, private val file: VirtualFile) : DialogWrapp
         updateDeviceWarning()
         updateOkEnabled()
         appendLog("${devices.size} device(s) carregado(s).")
+        maybeAutoSend()
     }
 
     private fun onDeviceError(message: String) {
         appendLog("ERRO ao listar devices:\n$message")
+        if (!logScroll.isVisible) {
+            showLogCheck.isSelected = true
+            logScroll.isVisible = true
+            window?.pack()
+        }
         updateOkEnabled()
+        maybeAutoSend()
     }
 
     private fun updateDeviceWarning() {

@@ -4,9 +4,9 @@ Contexto para o Claude Code trabalhar neste repositório.
 
 ## O que é este repo
 
-Um **plugin para IDEs JetBrains** que transmite arquivos por **áudio** direto da IDE. O usuário
-clica com o botão direito num arquivo do projeto → **"Enviar por Áudio"** → abre uma janela com
-configurações, barra de progresso, log ao vivo e botão de retentar.
+Um **plugin para IDEs JetBrains** que transmite por **áudio** direto da IDE. O usuário clica com o
+botão direito num **arquivo/pasta** (Project View) ou com um **texto selecionado** (editor) →
+**"Soundbridge TX"** → abre uma janela com fonte, configurações/presets, spinner e log ao vivo.
 
 Faz parte do projeto **SoundBridge** (transferência de arquivos usando só som, via modem OFDM).
 Competição acadêmica (prazo jan/2027); o plugin vale como **"implementação diferente"**.
@@ -51,8 +51,9 @@ captura a saída e mostra o progresso/log.
 | Componente | Papel |
 |---|---|
 | `plugin.xml` | registra a Action (menu de contexto) e o Settings; compatibilidade com IDEs JetBrains |
-| `SendByAudioAction` | a ação "Enviar por Áudio" no menu de contexto de um **arquivo ou pasta** |
-| `SendDialog` | a janela de envio: device, presets, WAV, log ao vivo + spinner + Cancelar |
+| `SendByAudioAction` | ação "Soundbridge TX" no Project View (**arquivo ou pasta**) |
+| `SendTextByAudioAction` | ação "Soundbridge TX" no menu do **editor** (habilitada com **texto selecionado**) |
+| `SendDialog` | a janela de envio: fonte (arquivo/pasta/**texto editável**), device, presets, WAV, log + spinner + Cancelar |
 | `SoundbridgeRunner` | executa o `soundbridge-tx` (subprocess): `listDevices()` e `transmit()`; lê o stdout cru em chunks |
 | `SoundbridgeCommand` | monta a `List<String>` do comando (função pura) + `tokenize()` |
 | `Preset` | os perfis de qualidade (AUTO/RÁPIDO/BALANCEADO/ROBUSTO/EXPERIMENTAL/CUSTOM) |
@@ -61,33 +62,46 @@ captura a saída e mostra o progresso/log.
 | `SettingsConfigurable` | a tela de Settings da IDE (Preferences → Tools → SoundBridge) |
 
 ### Fluxo
-1. Botão direito num arquivo no Project View → **"Enviar por Áudio"**.
-2. Abre o `SendDialog` (parâmetros selecionáveis).
-3. Ao **Enviar**: o `SoundbridgeRunner` roda `soundbridge-tx --in <arquivo> --play --device N ...`,
-   lê o stdout de texto linha a linha, alimenta o log ao vivo e a barra (indeterminada).
-4. Sucesso = `exitCode 0` + linha `crc32=...` vista. Falha (exit≠0 / traceback) → mostra
-   **Retentar** (reexecuta com os mesmos parâmetros).
+1. Botão direito num **arquivo/pasta** (Project View) **ou** com **texto selecionado** (editor) →
+   **"Soundbridge TX"**.
+2. Abre o `SendDialog` (fonte + parâmetros selecionáveis).
+3. Ao **Enviar/Salvar**: o `SoundbridgeRunner.transmit()` roda o comando (`--in <arquivo>` ou
+   `--text <seleção>` ou `--out <wav>`), lê o stdout **cru em chunks**, o `AnsiScreen` emula o terminal
+   (barra in-place) e o spinner nativo indica atividade. Cancelar mata o processo.
+4. Sucesso = `exitCode 0` + linha `crc32=...` vista → `✅`. Falha (exit≠0 / traceback) → `❌` + o log
+   aparece sozinho. (Botão **Retentar** = passo 5, ainda não feito.)
 
 ## Divisão dos parâmetros (DECISÃO TOMADA)
 
 **Fixos — nos Settings do plugin (uma vez):** comando do `soundbridge-tx` (ou caminho do Python),
 `band-high` (22000), `stereo` (sim), `peak`, `guard` (avançados, opcionais). `--verbose` é sempre ligado.
 
+**Fonte:** **arquivo** ou **pasta** (menu do Project View) ou **texto selecionado** (menu do editor).
+No modo texto a 1ª linha é um **TextArea editável** (dá pra alterar antes de enviar).
+
 **Selecionáveis — na Janela de Envio (a cada envio):**
-- **Device** de saída (dropdown, via `--list-devices` parseado). Aceita **arquivo ou pasta** (`--in <dir>`).
+- **Device** de saída (dropdown, via `--list-devices` parseado).
 - **Qualidade (preset)** — barra segmentada (`SegmentedButton`): AUTO · RÁPIDO · BALANCEADO · ROBUSTO ·
-  EXPERIMENTAL · CUSTOM. O preset preenche e **trava** modulação + FEC + resync + paridade; só **CUSTOM**
-  libera esses 4 campos; **AUTO** passa só `--auto`. Ver [PRESETS-HANDOFF.md](PRESETS-HANDOFF.md).
-- **Gerar WAV** (checkbox) — em vez de tocar, gera `<pasta>/<nome>.wav` (`--out`); o botão vira "Salvar".
-  Desabilitado para pasta.
-- **zip** (checkbox, **default ON**), **name** (default = nome do arquivo; não se aplica a pastas),
-  **profile** (opcional), **copymemory** (checkbox).
+  EXPERIMENTAL · CUSTOM. Preenche e **trava** modulação + FEC + resync + paridade; só **CUSTOM** libera;
+  **AUTO** passa só `--auto`. Ver [PRESETS-HANDOFF.md](PRESETS-HANDOFF.md).
+- **Gerar WAV** (checkbox) — gera `<pasta>/<nome>.wav` (`--out`); botão vira "Salvar". Só para arquivo
+  (desabilitado em pasta e texto).
+- **zip** (default ON p/ arquivo/pasta; OFF p/ texto), **name** (default = nome do arquivo; vazio no texto),
+  **profile** (opcional), **copymemory** (**só no texto**: marcado/habilitado; em arquivo/pasta off/desabilitado).
+- **Mostrar log** (off por default — log oculto; aparece sozinho em erro/falha).
+- **Auto-Enviar** (persistido) — na próxima abertura, a janela **já envia** ao abrir.
 
-> **`resync`/`parity` saíram dos Settings** — agora são por-envio (definidos pelo preset ou pelo CUSTOM).
-> No AUTO, o plugin **não emite** `--resync/--parity` (usa o default do tx).
+> **`resync`/`parity` saíram dos Settings** — por-envio (preset/CUSTOM). No AUTO não são emitidos.
 
-A janela **persiste as últimas escolhas** (preset, device, mod/FEC/resync/parity do CUSTOM, zip, profile,
-copymemory, WAV) — **exceto o nome**, que é sempre o do arquivo selecionado.
+### Envio de texto (`--text` vs `--in`)
+- **zip OFF:** `--text <seleção>` — vai como **arg único** do subprocess (sem shell). No **log** aparece
+  entre aspas com escape (representação copiável); na execução vai **cru** (NÃO colocar aspas literais —
+  o tx transmitiria as aspas como conteúdo).
+- **zip ON:** grava a seleção num **arquivo temporário** e usa `--in <temp> --zip` (à prova de quoting);
+  o temp é apagado ao fim. Nome no RX = campo Nome, ou `texto.txt` se vazio.
+
+A janela **persiste as últimas escolhas** (preset, device, CUSTOM, zip [arquivo], profile, WAV, Auto-Enviar)
+— **exceto o nome** e o **texto**.
 
 ## Como o plugin consome o pacote (contrato de parse — CLI 1.0.0, Opção B)
 

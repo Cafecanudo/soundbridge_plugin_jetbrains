@@ -27,10 +27,10 @@ object SoundbridgeCommand {
     fun tokenize(commandBase: String): List<String> =
         commandBase.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
 
-    fun buildCommand(settings: SoundbridgeSettings.State, opts: SendOptions, filePath: String): List<String> {
+    fun buildCommand(settings: SoundbridgeSettings.State, opts: SendOptions, input: List<String>): List<String> {
         val cmd = mutableListOf<String>()
         cmd += tokenize(settings.commandBase)
-        cmd += listOf("--in", filePath)
+        cmd += input
         if (opts.outWav != null) {
             cmd += listOf("--out", opts.outWav)
         } else {

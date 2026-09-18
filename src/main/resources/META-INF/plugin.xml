@@ -21,9 +21,15 @@
     <actions>
         <action id="com.soundbridge.plugin.SendByAudioAction"
                 class="com.soundbridge.plugin.SendByAudioAction"
-                text="Enviar por Áudio"
+                text="Soundbridge TX"
                 description="Transmite o arquivo por áudio via SoundBridge TX">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+        <action id="com.soundbridge.plugin.SendTextByAudioAction"
+                class="com.soundbridge.plugin.SendTextByAudioAction"
+                text="Soundbridge TX"
+                description="Transmite o texto selecionado por áudio via SoundBridge TX">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
     </actions>
 </idea-plugin>
