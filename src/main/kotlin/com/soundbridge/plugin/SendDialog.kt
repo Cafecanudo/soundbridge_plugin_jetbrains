@@ -32,11 +32,6 @@ sealed interface SendSource {
     data class TextSelection(val content: String) : SendSource
 }
 
-private fun textPreview(t: String): String {
-    val oneLine = t.replace(Regex("\\s+"), " ").trim()
-    return if (oneLine.length > 80) oneLine.take(80) + "…" else oneLine
-}
-
 private fun shellDisplay(cmd: List<String>): String = cmd.joinToString(" ") { a ->
     if (a.isEmpty() || a.any { it == ' ' || it == '"' || it == '\n' || it == '\t' }) {
         "\"" + a.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
@@ -56,10 +51,6 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         is SendSource.FileOrDir -> if (source.file.isDirectory) "Pasta:" else "Arquivo:"
         is SendSource.TextSelection -> "Texto:"
     }
-    private val sourceDisplay = when (source) {
-        is SendSource.FileOrDir -> source.file.path
-        is SendSource.TextSelection -> textPreview(source.content)
-    }
     private val defaultName = if (source is SendSource.FileOrDir) source.file.name else ""
     private val initialPreset =
         Preset.entries.firstOrNull { it.name == settings.lastPreset } ?: Preset.AUTO
@@ -69,6 +60,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         lineWrap = true
         wrapStyleWord = true
     }
+    private val pathField = JBTextField(if (source is SendSource.FileOrDir) source.file.path else "")
 
     private val deviceModel = DefaultComboBoxModel<SoundbridgeDevice>()
     private val deviceCombo = ComboBox(deviceModel).apply {
@@ -172,7 +164,10 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
                     .align(AlignX.FILL)
             }
         } else {
-            row(sourceLabel) { label(sourceDisplay) }
+            row(sourceLabel) {
+                cell(pathField).align(AlignX.FILL).columns(COLUMNS_LARGE)
+                contextHelp("Caminho do arquivo/pasta a transmitir (--in). Editável, caso precise ajustar.", "Caminho")
+            }
         }
         row("Dispositivo:") {
             cell(deviceCombo).align(AlignX.FILL)
@@ -316,7 +311,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
                 tempTextFile = createTempTextFile(content)
                 listOf("--in", tempTextFile!!.path)
             }
-            else -> listOf("--in", (source as SendSource.FileOrDir).file.path)
+            else -> listOf("--in", pathField.text.trim())
         }
 
         val opts = SendOptions(
@@ -425,7 +420,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
 
     private fun wavOutputPath(): String {
         val base = nameField.text.trim().ifBlank { defaultName }
-        val dir = vfile?.parent?.path ?: return "$base.wav"
+        val dir = File(pathField.text.trim()).parent ?: return "$base.wav"
         return File(dir, "$base.wav").path
     }
 
@@ -448,6 +443,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         copyCheck.isEnabled = enabled && isText
         nameField.isEnabled = enabled && !isDir
         profileField.isEnabled = enabled
+        pathField.isEnabled = enabled && !isText
         autoSendCheck.isEnabled = enabled
         autoCloseCheck.isEnabled = enabled
         textInputArea.isEnabled = enabled
