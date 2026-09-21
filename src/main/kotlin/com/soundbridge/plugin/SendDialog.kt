@@ -6,9 +6,11 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBColor
@@ -466,8 +468,14 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
     }
 
     private fun relativePath(): String {
+        val proj = project
+        val f = vfile
+        if (proj != null && f != null) {
+            val root = ProjectRootManager.getInstance(proj).fileIndex.getContentRootForFile(f)
+            if (root != null) VfsUtilCore.getRelativePath(f, root, '/')?.let { return it }
+        }
         val path = pathField.text.trim().replace('\\', '/')
-        val base = project?.basePath?.replace('\\', '/')?.trimEnd('/')
+        val base = proj?.basePath?.replace('\\', '/')?.trimEnd('/')
         return if (base != null && path.startsWith("$base/", ignoreCase = true)) path.substring(base.length + 1)
         else path.substringAfterLast('/')
     }
