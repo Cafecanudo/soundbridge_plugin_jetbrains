@@ -7,6 +7,7 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBCheckBox
@@ -26,6 +27,7 @@ import java.awt.event.ItemEvent
 import java.io.File
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
+import javax.swing.event.DocumentEvent
 
 sealed interface SendSource {
     data class FileOrDir(val file: VirtualFile) : SendSource
@@ -40,7 +42,7 @@ private fun shellDisplay(cmd: List<String>): String = cmd.joinToString(" ") { a 
     }
 }
 
-class SendDialog(project: Project?, private val source: SendSource) : DialogWrapper(project) {
+class SendDialog(private val project: Project?, private val source: SendSource) : DialogWrapper(project) {
 
     private val settings = SoundbridgeSettings.getInstance().state
     private val vfile: VirtualFile? = (source as? SendSource.FileOrDir)?.file
@@ -94,6 +96,9 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         isSelected = if (isText) settings.lastZipText else settings.lastZip
     }
     private val nameField = JBTextField(if (isDir) "" else defaultName).apply { isEnabled = !isDir }
+    private val relativePathCheck = JBCheckBox("Nome = caminho relativo").apply {
+        isEnabled = !isDir && !isText
+    }
     private val profileField = JBTextField(settings.lastProfile)
     private val copyCheck = JBCheckBox("copymemory").apply {
         isSelected = isText
@@ -149,6 +154,12 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
             window?.pack()
         }
         autoCloseCheck.addActionListener { settings.lastAutoClose = autoCloseCheck.isSelected }
+        relativePathCheck.addActionListener { applyRelativePathMode() }
+        pathField.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                if (relativePathCheck.isSelected) nameField.text = relativePath()
+            }
+        })
         init()
         setCancelButtonText("Fechar")
         updateWavMode()
@@ -230,6 +241,14 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
                 "Nome do arquivo salvo no receptor. No texto, se vazio o RX usa a área de transferência. " +
                     "Aceita subpasta (docs/a.txt).",
                 "Name",
+            )
+        }
+        row("") {
+            cell(relativePathCheck)
+            contextHelp(
+                "Usa o caminho do arquivo relativo à raiz do projeto como nome (ex.: src/Main.java), " +
+                    "para o RX recriar a estrutura de pastas.",
+                "Caminho relativo",
             )
         }
         row("Perfil:") {
@@ -424,6 +443,18 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         return File(dir, "$base.wav").path
     }
 
+    private fun applyRelativePathMode() {
+        nameField.text = if (relativePathCheck.isSelected) relativePath() else defaultName
+        nameField.isEnabled = !isDir
+    }
+
+    private fun relativePath(): String {
+        val path = pathField.text.trim().replace('\\', '/')
+        val base = project?.basePath?.replace('\\', '/')?.trimEnd('/')
+        return if (base != null && path.startsWith("$base/")) path.removePrefix("$base/")
+        else path.substringAfterLast('/')
+    }
+
     private fun createTempTextFile(content: String): File {
         val tmp = File.createTempFile("soundbridge-", ".txt")
         tmp.deleteOnExit()
@@ -444,6 +475,7 @@ class SendDialog(project: Project?, private val source: SendSource) : DialogWrap
         nameField.isEnabled = enabled && !isDir
         profileField.isEnabled = enabled
         pathField.isEnabled = enabled && !isText
+        relativePathCheck.isEnabled = enabled && !isDir && !isText
         autoSendCheck.isEnabled = enabled
         autoCloseCheck.isEnabled = enabled
         textInputArea.isEnabled = enabled
