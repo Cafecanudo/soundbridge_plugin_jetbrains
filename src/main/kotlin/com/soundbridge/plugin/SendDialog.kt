@@ -468,7 +468,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
     private fun relativePath(): String {
         val path = pathField.text.trim().replace('\\', '/')
         val base = project?.basePath?.replace('\\', '/')?.trimEnd('/')
-        return if (base != null && path.startsWith("$base/")) path.removePrefix("$base/")
+        return if (base != null && path.startsWith("$base/", ignoreCase = true)) path.substring(base.length + 1)
         else path.substringAfterLast('/')
     }
 
