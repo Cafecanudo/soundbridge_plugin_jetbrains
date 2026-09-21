@@ -20,6 +20,7 @@ data class SendOptions(
     val name: String,
     val profile: String,
     val copymemory: Boolean,
+    val replForce: Boolean,
 )
 
 object SoundbridgeCommand {
@@ -52,6 +53,7 @@ object SoundbridgeCommand {
         if (opts.name.isNotBlank()) cmd += listOf("--name", opts.name)
         if (opts.profile.isNotBlank()) cmd += listOf("--profile", opts.profile)
         if (opts.copymemory) cmd += "--copymemory"
+        if (opts.replForce) cmd += "--repl-force"
         cmd += "--verbose"
         return cmd
     }

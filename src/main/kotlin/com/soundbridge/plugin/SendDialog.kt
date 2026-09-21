@@ -107,6 +107,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
     private val relativePathCheck = JBCheckBox("Nome = caminho relativo").apply {
         isEnabled = !isDir && !isText
     }
+    private val replForceCheck = JBCheckBox("--repl-force").apply { isSelected = settings.lastReplForce }
     private val profileField = JBTextField(settings.lastProfile)
     private val copyCheck = JBCheckBox("copymemory").apply {
         isSelected = isText
@@ -163,6 +164,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
         }
         autoCloseCheck.addActionListener { settings.lastAutoClose = autoCloseCheck.isSelected }
         relativePathCheck.addActionListener { applyRelativePathMode() }
+        replForceCheck.addActionListener { settings.lastReplForce = replForceCheck.isSelected }
         pathField.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) {
                 if (relativePathCheck.isSelected) nameField.text = relativePath()
@@ -261,6 +263,10 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
                 "Caminho relativo",
             )
         }
+        row("") {
+            cell(replForceCheck)
+            contextHelp("Adiciona a flag --repl-force à linha de comando.", "repl-force")
+        }
         row("Perfil:") {
             cell(profileField).align(AlignX.FILL).columns(COLUMNS_LARGE)
             contextHelp("Perfil de recepção; o RX resolve a pasta de destino. Opcional.", "Profile")
@@ -355,6 +361,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
             name = name,
             profile = profileField.text.trim(),
             copymemory = copyCheck.isSelected,
+            replForce = replForceCheck.isSelected,
         )
         val cmd = SoundbridgeCommand.buildCommand(settings, opts, input)
         startTransmit(cmd, outWav)
@@ -487,6 +494,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
         profileField.isEnabled = enabled
         pathField.isEnabled = enabled && !isText
         relativePathCheck.isEnabled = enabled && !isDir && !isText
+        replForceCheck.isEnabled = enabled
         autoSendCheck.isEnabled = enabled
         autoCloseCheck.isEnabled = enabled
         textInputArea.isEnabled = enabled

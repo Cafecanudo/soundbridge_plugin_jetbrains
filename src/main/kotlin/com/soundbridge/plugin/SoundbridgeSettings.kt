@@ -31,6 +31,7 @@ class SoundbridgeSettings : PersistentStateComponent<SoundbridgeSettings.State> 
         var lastZipText: Boolean = false,
         var lastShowLog: Boolean = false,
         var lastAutoClose: Boolean = false,
+        var lastReplForce: Boolean = false,
         var cachedDevicesRaw: String = "",
     )
 
