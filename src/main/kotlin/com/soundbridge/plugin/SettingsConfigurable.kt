@@ -1,13 +1,14 @@
 package com.soundbridge.plugin
 
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.builder.*
 import javax.swing.JComponent
 
-class SettingsConfigurable : Configurable {
+class SettingsConfigurable(project: Project) : Configurable {
 
-    private val state = SoundbridgeSettings.getInstance().state
+    private val state = SoundbridgeSettings.getInstance(project).state
     private var panel: DialogPanel? = null
 
     override fun getDisplayName(): String = "SoundBridge"

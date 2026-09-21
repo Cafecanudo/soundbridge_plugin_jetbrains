@@ -1,7 +1,10 @@
 package com.soundbridge.plugin
 
+import com.intellij.icons.AllIcons
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
@@ -26,6 +29,7 @@ import java.awt.Dimension
 import java.awt.event.ItemEvent
 import java.io.File
 import javax.swing.DefaultComboBoxModel
+import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.event.DocumentEvent
 
@@ -44,7 +48,8 @@ private fun shellDisplay(cmd: List<String>): String = cmd.joinToString(" ") { a 
 
 class SendDialog(private val project: Project?, private val source: SendSource) : DialogWrapper(project) {
 
-    private val settings = SoundbridgeSettings.getInstance().state
+    private val settings =
+        project?.let { SoundbridgeSettings.getInstance(it).state } ?: SoundbridgeSettings.State()
     private val vfile: VirtualFile? = (source as? SendSource.FileOrDir)?.file
     private val isText = source is SendSource.TextSelection
     private val isDir = vfile?.isDirectory == true
@@ -71,6 +76,9 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
     private val deviceWarning = JBLabel("").apply {
         foreground = JBColor.ORANGE
         isVisible = false
+    }
+    private val refreshButton = JButton(AllIcons.Actions.Refresh).apply {
+        toolTipText = "Atualizar a lista de dispositivos"
     }
 
     private lateinit var presetBar: SegmentedButton<Preset>
@@ -135,7 +143,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
     private var screen: AnsiScreen? = null
 
     init {
-        title = "Enviar por Áudio — SoundBridge"
+        title = "Soundbridge TX" + (pluginVersion()?.let { " - $it" } ?: "")
         Disposer.register(disposable, processIcon)
         deviceCombo.addItemListener { e ->
             if (e.stateChange == ItemEvent.SELECTED) updateDeviceWarning()
@@ -160,12 +168,13 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
                 if (relativePathCheck.isSelected) nameField.text = relativePath()
             }
         })
+        refreshButton.addActionListener { refreshDevices() }
         init()
         setCancelButtonText("Fechar")
         updateWavMode()
         applyPreset(currentPreset())
         updateOkEnabled()
-        loadDevicesAsync()
+        loadDevicesInitial()
     }
 
     override fun createCenterPanel(): JComponent = panel {
@@ -182,9 +191,10 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
         }
         row("Dispositivo:") {
             cell(deviceCombo).align(AlignX.FILL)
+            cell(refreshButton)
             contextHelp(
                 "Saída de áudio ligada ao cabo que vai para o PC receptor. O RX exige 48000 Hz — " +
-                    "prefira um device WASAPI 48000Hz.",
+                    "prefira um device WASAPI 48000Hz. O botão ↻ reconsulta a lista.",
                 "Device",
             )
         }
@@ -465,6 +475,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
     private fun setInputsEnabled(enabled: Boolean) {
         val custom = currentPreset().isCustom
         deviceCombo.isEnabled = enabled && !wavCheck.isSelected
+        refreshButton.isEnabled = enabled
         wavCheck.isEnabled = enabled && !isDir && !isText
         modCombo.isEnabled = enabled && custom
         fecCombo.isEnabled = enabled && custom
@@ -503,20 +514,35 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
         ApplicationManager.getApplication().invokeLater(block, ModalityState.any())
     }
 
-    private fun loadDevicesAsync() {
+    private fun pluginVersion(): String? =
+        PluginManagerCore.getPlugin(PluginId.getId("com.soundbridge.plugin"))?.version
+
+    private fun loadDevicesInitial() {
+        val cached = settings.cachedDevicesRaw
+        val devices = if (cached.isBlank()) emptyList() else SoundbridgeRunner.parseDevices(cached)
+        if (devices.isNotEmpty()) populateDevices(devices, fromCache = true)
+        else refreshDevices()
+    }
+
+    private fun refreshDevices() {
+        refreshButton.isEnabled = false
         appendLog("Listando devices…")
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = SoundbridgeRunner.listDevices(settings.commandBase)
             ui {
+                refreshButton.isEnabled = true
                 when (result) {
-                    is DeviceListResult.Ok -> populateDevices(result.devices)
+                    is DeviceListResult.Ok -> {
+                        settings.cachedDevicesRaw = result.raw
+                        populateDevices(result.devices)
+                    }
                     is DeviceListResult.Err -> onDeviceError(result.message)
                 }
             }
         }
     }
 
-    private fun populateDevices(devices: List<SoundbridgeDevice>) {
+    private fun populateDevices(devices: List<SoundbridgeDevice>, fromCache: Boolean = false) {
         deviceModel.removeAllElements()
         devices.forEach { deviceModel.addElement(it) }
         val pick = devices.firstOrNull { it.index == settings.lastDeviceIndex }
@@ -526,7 +552,7 @@ class SendDialog(private val project: Project?, private val source: SendSource) 
         deviceCombo.selectedItem = pick
         updateDeviceWarning()
         updateOkEnabled()
-        appendLog("${devices.size} device(s) carregado(s).")
+        appendLog("${devices.size} device(s)" + if (fromCache) " (do cache)." else " carregado(s).")
         maybeAutoSend()
     }
 

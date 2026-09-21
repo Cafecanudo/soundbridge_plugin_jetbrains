@@ -18,7 +18,7 @@ data class SoundbridgeDevice(
 }
 
 sealed interface DeviceListResult {
-    data class Ok(val devices: List<SoundbridgeDevice>) : DeviceListResult
+    data class Ok(val devices: List<SoundbridgeDevice>, val raw: String) : DeviceListResult
     data class Err(val message: String) : DeviceListResult
 }
 
@@ -50,7 +50,7 @@ object SoundbridgeRunner {
             }
             val devices = parseDevices(output)
             when {
-                devices.isNotEmpty() -> DeviceListResult.Ok(devices)
+                devices.isNotEmpty() -> DeviceListResult.Ok(devices, output)
                 proc.exitValue() != 0 ->
                     DeviceListResult.Err("O comando falhou (exit ${proc.exitValue()}):\n${output.take(600)}")
                 else -> DeviceListResult.Err("Nenhum device de saída encontrado.\n${output.take(600)}")
@@ -114,7 +114,7 @@ object SoundbridgeRunner {
         return pb.start()
     }
 
-    private fun parseDevices(output: String): List<SoundbridgeDevice> =
+    fun parseDevices(output: String): List<SoundbridgeDevice> =
         output.lineSequence().mapNotNull { line ->
             val m = DEVICE_LINE.find(line) ?: return@mapNotNull null
             SoundbridgeDevice(
